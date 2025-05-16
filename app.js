@@ -4,6 +4,13 @@ import { Adapter } from './lib/adapter.js';
 
 const adapter = new Adapter();
 
+const HEADER_MU_SESSION_ID = 'mu-session-id';
+
+const MU_REQUEST_HEADERS = [
+  'mu-session-id',
+  'mu-auth-allowed-groups'
+];
+
 // Add body parser middleware for JSON
 app.use(bodyParser.json({ type: 'application/vnd.api+json' }));
 
@@ -19,6 +26,11 @@ app.get('/health', function (req, res) {
 // JSON:API compliant route for updating an address
 app.patch('/addresses/:id', async function (req, res) {
   try {
+    const mu_headers = Object.fromEntries(
+      Object.entries(req.headers).filter(([key]) => MU_REQUEST_HEADERS.includes(key))
+    );
+    console.log('mu_headers', mu_headers);
+
     // JSON:API validation
     if (!req.body.data || req.body.data.type !== 'addresses' || !req.body.data.id) {
       return res.status(400).json({
@@ -60,9 +72,13 @@ app.patch('/addresses/:id', async function (req, res) {
     }
 
     return adapter
-      .updateAddress(addressId, addressData)
+      .updateAddress(addressId, addressData, mu_headers)
       .then(() => {
         // If the update is successful, return the updated resource
+        // write the returned value of updateAddress to the response
+        // Assuming updateAddress returns the updated address data
+
+
         res.status(200).json({
           data: {
             type: 'addresses',
