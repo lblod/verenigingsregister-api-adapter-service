@@ -1,6 +1,7 @@
 import { app } from 'mu';
 import bodyParser from 'body-parser';
 import { Adapter } from './lib/adapter.js';
+import { EDITOR_ROLE } from './constants.js';
 
 const adapter = new Adapter();
 
@@ -10,6 +11,41 @@ const MU_REQUEST_HEADERS = [
   'mu-session-id',
   'mu-auth-allowed-groups'
 ];
+
+const UNAUTHORIZED = {
+  errors: [
+    {
+      status: '403',
+      title: 'Forbidden',
+      detail: `User must be a ${EDITOR_ROLE}`,
+    },
+  ],
+}
+
+// Helper function to check if the user is a verenigingen-beheerder
+// This function checks the 'mu-auth-allowed-groups' header for the presence of 'verenigingen-beheerder'
+// and returns true if found, false otherwise.
+// Consider using a less hacky way to check for the presence of the group
+function isVerenigingenBeheerder(mu_headers) {
+  const groupsHeader = mu_headers['mu-auth-allowed-groups'];
+  if (!groupsHeader) return false;
+  try {
+    const groups = JSON.parse(groupsHeader);
+    return Array.isArray(groups) && groups.some(g => g.name === EDITOR_ROLE);
+  } catch {
+    return false;
+  }
+}
+
+function getMuHeaders(req) {
+  const muHeaders = {};
+  for (const header of MU_REQUEST_HEADERS) {
+    if (req.headers[header]) {
+      muHeaders[header] = req.headers[header];
+    }
+  }
+  return muHeaders;
+}
 
 // Add body parser middleware for JSON
 app.use(bodyParser.json({ type: 'application/vnd.api+json' }));
@@ -26,10 +62,12 @@ app.get('/health', function (req, res) {
 // JSON:API compliant route for updating an address
 app.patch('/addresses/:id', async function (req, res) {
   try {
-    const mu_headers = Object.fromEntries(
-      Object.entries(req.headers).filter(([key]) => MU_REQUEST_HEADERS.includes(key))
-    );
+    const mu_headers = getMuHeaders(req);
     console.log('mu_headers', mu_headers);
+
+    if (!isVerenigingenBeheerder(mu_headers)) {
+      return res.status(403).json(UNAUTHORIZED);
+    }
 
     // JSON:API validation
     if (!req.body.data || req.body.data.type !== 'addresses' || !req.body.data.id) {
@@ -111,3 +149,4 @@ app.patch('/addresses/:id', async function (req, res) {
     });
   }
 });
+
