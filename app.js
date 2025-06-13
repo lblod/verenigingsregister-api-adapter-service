@@ -2,7 +2,7 @@ import { app } from 'mu';
 import bodyParser from 'body-parser';
 import { Adapter } from './lib/adapter.js';
 import { EDITOR_ROLE } from './constants.js';
-
+import { forwardRequest } from './lib/forwardRequest.js';
 const adapter = new Adapter();
 
 const HEADER_MU_SESSION_ID = 'mu-session-id';
@@ -27,10 +27,12 @@ const UNAUTHORIZED = {
 // and returns true if found, false otherwise.
 // Consider using a less hacky way to check for the presence of the group
 function isVerenigingenBeheerder(mu_headers) {
+  console.log('mu_headers', mu_headers);
   const groupsHeader = mu_headers['mu-auth-allowed-groups'];
   if (!groupsHeader) return false;
   try {
     const groups = JSON.parse(groupsHeader);
+    console.log('roles', groups);
     return Array.isArray(groups) && groups.some(g => g.name === EDITOR_ROLE);
   } catch {
     return false;
@@ -97,47 +99,25 @@ app.patch('/addresses/:id', async function (req, res) {
       });
     }
 
-    // Extract attributes from request body
+    // Extract and filter valid attributes
     const attributes = req.body.data.attributes || {};
     const validAttributes = ['number', 'box-number', 'street', 'postcode', 'municipality', 'country'];
-
-    // Filter to only include allowed attributes
     const addressData = {};
+
     for (const attr of validAttributes) {
       if (attributes[attr] !== undefined) {
         addressData[attr] = attributes[attr];
       }
     }
 
-    return adapter
-      .updateAddress(addressId, addressData, mu_headers)
-      .then(() => {
-        // If the update is successful, return the updated resource
-        // write the returned value of updateAddress to the response
-        // Assuming updateAddress returns the updated address data
+    // Perform the update
+    await adapter.updateAddress(addressId, addressData, mu_headers);
 
+    // Forward the request to the JSON:API client
+    await forwardRequest(req, res);
 
-        res.status(200).json({
-          data: {
-            type: 'addresses',
-            id: addressId,
-            attributes: addressData,
-          },
-        });
-      })
-      .catch((error) => {
-        // Handle any errors that occur during the update
-        res.status(500).json({
-          errors: [
-            {
-              status: '500',
-              title: 'Server error',
-              detail: error.message,
-            },
-          ],
-        });
-      });
   } catch (error) {
+    console.error('Patch /addresses/:id failed:', error);
     res.status(500).json({
       errors: [
         {
