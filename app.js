@@ -7,10 +7,7 @@ const adapter = new Adapter();
 
 const HEADER_MU_SESSION_ID = 'mu-session-id';
 
-const MU_REQUEST_HEADERS = [
-  'mu-session-id',
-  'mu-auth-allowed-groups'
-];
+const MU_REQUEST_HEADERS = ['mu-session-id', 'mu-auth-allowed-groups'];
 
 const UNAUTHORIZED = {
   errors: [
@@ -20,7 +17,7 @@ const UNAUTHORIZED = {
       detail: `User must be a ${EDITOR_ROLE}`,
     },
   ],
-}
+};
 
 // Helper function to check if the user is a verenigingen-beheerder
 // This function checks the 'mu-auth-allowed-groups' header for the presence of 'verenigingen-beheerder'
@@ -33,7 +30,7 @@ function isVerenigingenBeheerder(mu_headers) {
   try {
     const groups = JSON.parse(groupsHeader);
     console.log('roles', groups);
-    return Array.isArray(groups) && groups.some(g => g.name === EDITOR_ROLE);
+    return Array.isArray(groups) && groups.some((g) => g.name === EDITOR_ROLE);
   } catch {
     return false;
   }
@@ -115,7 +112,6 @@ app.patch('/addresses/:id', async function (req, res) {
 
     // Forward the request to the JSON:API client
     await forwardRequest(req, res);
-
   } catch (error) {
     console.error('Patch /addresses/:id failed:', error);
     res.status(500).json({
@@ -130,3 +126,70 @@ app.patch('/addresses/:id', async function (req, res) {
   }
 });
 
+// JSON:API compliant route for updating a contact-point
+app.patch('/contact-points/:id', async function (req, res) {
+  try {
+    const mu_headers = getMuHeaders(req);
+    console.log('mu_headers', mu_headers);
+
+    if (!isVerenigingenBeheerder(mu_headers)) {
+      return res.status(403).json(UNAUTHORIZED);
+    }
+
+    // JSON:API validation
+    if (!req.body.data || req.body.data.type !== 'contact-points' || !req.body.data.id) {
+      return res.status(400).json({
+        errors: [
+          {
+            status: '400',
+            title: 'Invalid request',
+            detail: "Request must include data.type='contact-points' and data.id",
+          },
+        ],
+      });
+    }
+
+    const contactPointId = req.params.id;
+
+    // Ensure ID in URL matches ID in request body
+    if (contactPointId !== req.body.data.id) {
+      return res.status(400).json({
+        errors: [
+          {
+            status: '400',
+            title: 'ID mismatch',
+            detail: 'ID in URL must match ID in request body',
+          },
+        ],
+      });
+    }
+
+    // Extract and filter valid attributes
+    const attributes = req.body.data.attributes || {};
+    const validAttributes = ['email', 'telephone', 'website', 'type'];
+    const contactPointData = {};
+
+    for (const attr of validAttributes) {
+      if (attributes[attr] !== undefined) {
+        contactPointData[attr] = attributes[attr];
+      }
+    }
+
+    // Perform the update
+    await adapter.updateContactPoint(contactPointId, contactPointData, mu_headers);
+
+    // Forward the request to the JSON:API client
+    await forwardRequest(req, res);
+  } catch (error) {
+    console.error('Patch /contact-points/:id failed:', error);
+    res.status(500).json({
+      errors: [
+        {
+          status: '500',
+          title: 'Server error',
+          detail: error.message,
+        },
+      ],
+    });
+  }
+});
